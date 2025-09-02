@@ -1,0 +1,229 @@
+# TikTok Netlify OAuth Demo
+
+โปรเจกต์ตัวอย่างนี้เป็น "พร้อม deploy" ขึ้น Netlify (ใช้ Netlify Functions) สำหรับทดลอง OAuth2 กับ TikTok Open Platform
+
+---
+
+## โครงสร้างโปรเจกต์
+
+```
+/tiktok-netlify-oauth-demo
+ ├─ netlify.toml
+ ├─ package.json
+ ├─ .gitignore
+ ├─ README.md
+ ├─ functions/
+ │    ├─ oauth-login.js
+ │    └─ oauth-callback.js
+ └─ public/
+      ├─ index.html
+      ├─ terms.html
+      └─ privacy.html
+```
+
+---
+
+> หมายเหตุ: โค้ดใน `functions/` รันฝั่งเซิร์ฟเวอร์ (Netlify Functions). คุณต้องตั้ง Environment Variables บน Netlify ก่อน deploy: `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_REDIRECT_URI`.
+
+---
+
+## คำอธิบายสั้น ๆ
+- `/.netlify/functions/oauth-login` — redirect ผู้ใช้ไปยัง TikTok authorize URL
+- `/.netlify/functions/oauth-callback` — รับ `?code=` จาก TikTok แล้วแลกเป็น access_token และแสดงผล JSON
+- `public/terms.html`, `public/privacy.html` — ไฟล์ Terms / Privacy ที่คุณจะใส่ลงใน TikTok Developer Portal
+- `TIKTOK_REDIRECT_URI` ต้องตั้งค่าให้ตรงกับ `https://<your-site>/.netlify/functions/oauth-callback`
+
+---
+
+## ไฟล์สำคัญ (คัดลอกไปใช้ได้เลย)
+
+### netlify.toml
+
+```toml
+[build]
+  publish = "public"
+  functions = "functions"
+```
+
+---
+
+### package.json
+
+```json
+{
+  "name": "tiktok-netlify-oauth-demo",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "axios": "^1.4.0"
+  }
+}
+```
+
+---
+
+### .gitignore
+
+```
+node_modules
+.env
+```
+
+---
+
+### functions/oauth-login.js
+
+```js
+const querystring = require('querystring');
+
+exports.handler = async (event) => {
+  const clientKey = process.env.TIKTOK_CLIENT_KEY;
+  const redirectUri = process.env.TIKTOK_REDIRECT_URI;
+  const scopes = ['user.info.basic', 'video.list', 'video.upload'].join(',');
+
+  const params = querystring.stringify({
+    client_key: clientKey,
+    response_type: 'code',
+    scope: scopes,
+    redirect_uri: redirectUri,
+    state: 'state_demo'
+  });
+
+  return {
+    statusCode: 302,
+    headers: { Location: `https://www.tiktok.com/v2/auth/authorize/?${params}` }
+  };
+};
+```
+
+---
+
+### functions/oauth-callback.js
+
+```js
+const axios = require('axios');
+const querystring = require('querystring');
+
+exports.handler = async (event) => {
+  try {
+    const params = event.queryStringParameters || {};
+    const code = params.code;
+    if (!code) return { statusCode: 400, body: 'Missing code' };
+
+    const clientKey = process.env.TIKTOK_CLIENT_KEY;
+    const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
+    const redirectUri = process.env.TIKTOK_REDIRECT_URI;
+
+    const data = querystring.stringify({
+      client_key: clientKey,
+      client_secret: clientSecret,
+      code,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri
+    });
+
+    const tokenRes = await axios.post(
+      'https://open.tiktokapis.com/v2/oauth/token/',
+      data,
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+
+    // TikTok ตอบกลับอาจอยู่ใน tokenRes.data หรือ tokenRes.data.data
+    const payload = tokenRes.data.data || tokenRes.data;
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify(payload, null, 2),
+      headers: { 'Content-Type': 'application/json' }
+    };
+  } catch (err) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify(err.response?.data || err.message)
+    };
+  }
+};
+```
+
+---
+
+### public/index.html
+
+```html
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>TikTok OAuth Demo</title></head>
+<body>
+  <h1>TikTok OAuth on Netlify (Demo)</h1>
+  <p>
+    <a href="/.netlify/functions/oauth-login">Login with TikTok (Start OAuth)</a>
+  </p>
+  <p>
+    <a href="/terms.html">Terms</a> | <a href="/privacy.html">Privacy</a>
+  </p>
+</body>
+</html>
+```
+
+---
+
+### public/terms.html
+
+```html
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Terms</title></head>
+<body>
+  <h1>Terms of Service (ตัวอย่าง)</h1>
+  <p>นี่คือ Terms of Service ของแอป (ตัวอย่าง)</p>
+</body></html>
+```
+
+---
+
+### public/privacy.html
+
+```html
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Privacy</title></head>
+<body>
+  <h1>Privacy Policy (ตัวอย่าง)</h1>
+  <p>นี่คือ Privacy Policy ของแอป (ตัวอย่าง)</p>
+</body></html>
+```
+
+---
+
+## README (ย่อขั้นตอนการใช้งาน)
+
+โปรดเปิดไฟล์ README.md ในโฟลเดอร์โปรเจกต์ที่ผมรวมไว้ในเอกสารนี้ (มีขั้นตอนพร้อมคำสั่ง `git`) — หรือดูสรุปขั้นตอนหลักด้านล่าง:
+
+1. **Regenerate client secret** ถ้าคุณเคยเผย `client_secret` (แนะนำ) จาก TikTok Developer Portal
+2. **สร้าง Git repo** ในเครื่อง แล้ว `git push` ขึ้น GitHub
+3. **เชื่อม Repo กับ Netlify** (Add new site -> Import from Git)
+4. **ตั้ง Environment Variables บน Netlify**
+   - `TIKTOK_CLIENT_KEY`
+   - `TIKTOK_CLIENT_SECRET`
+   - `TIKTOK_REDIRECT_URI` = `https://<your-netlify-site>/.netlify/functions/oauth-callback`
+5. **Deploy** และรับโดเมน `https://<your-netlify-site>`
+6. ใน **TikTok Developer Portal** (Manage apps):
+   - ใส่ Terms URL → `https://<your-netlify-site>/terms.html`
+   - ใส่ Privacy URL → `https://<your-netlify-site>/privacy.html`
+   - ใส่ Web/Desktop Redirect URL → `https://<your-netlify-site>/.netlify/functions/oauth-callback`
+7. ทดสอบ: เปิด `https://<your-netlify-site>/.netlify/functions/oauth-login` -> Authorize -> ดู JSON token ที่ callback
+
+---
+
+## หมายเหตุความปลอดภัย
+- เก็บ `client_secret`, `access_token`, `refresh_token` ให้ปลอดภัย (ไม่ใส่ใน client-side)
+- สำหรับ production: ต้องตรวจสอบ `state` (ป้องกัน CSRF) และเก็บ token ใน DB ผูกกับบัญชีผู้ใช้
+
+---
+
+ถ้าต้องการ ผมสามารถ:
+- สร้าง GitHub repo ให้พร้อม deploy (ถ้าคุณอนุญาตให้ผมสร้างโค้ดตัวอย่าง) หรือ
+- อธิบายทีละคำสั่ง `git` ที่จะใช้เพื่อ push ขึ้น GitHub แล้วเชื่อม Netlify
+
+
+---
+
+*ไฟล์ทั้งหมดข้างต้นถูกบรรจุไว้ในเอกสารนี้ — เปิดดู/คัดลอกไฟล์ที่ต้องการได้เลย*

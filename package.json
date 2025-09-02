@@ -1,0 +1,11 @@
+{
+  "name": "tiktok-netlify-oauth-demo",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "echo Build step not needed"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.9"
+  }
+}
